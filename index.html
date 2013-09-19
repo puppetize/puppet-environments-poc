@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset='utf-8' />
+    <meta http-equiv="X-UA-Compatible" content="chrome=1" />
+    <meta name="description" content="Puppet-environments-poc : Leveraging dynamic Puppet environments for rapid single-user and solid team workflows" />
+
+    <link rel="stylesheet" type="text/css" media="screen" href="stylesheets/stylesheet.css">
+
+    <title>Puppet-environments-poc</title>
+  </head>
+
+  <body>
+
+    <!-- HEADER -->
+    <div id="header_wrap" class="outer">
+        <header class="inner">
+          <a id="forkme_banner" href="https://github.com/puppetize/puppet-environments-poc">View on GitHub</a>
+
+          <h1 id="project_title">Puppet-environments-poc</h1>
+          <h2 id="project_tagline">Leveraging dynamic Puppet environments for rapid single-user and solid team workflows</h2>
+
+            <section id="downloads">
+              <a class="zip_download_link" href="https://github.com/puppetize/puppet-environments-poc/zipball/master">Download this project as a .zip file</a>
+              <a class="tar_download_link" href="https://github.com/puppetize/puppet-environments-poc/tarball/master">Download this project as a tar.gz file</a>
+            </section>
+        </header>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div id="main_content_wrap" class="outer">
+      <section id="main_content" class="inner">
+        <p>In this proof-of-concept, we describe how dynamic Puppet environments can be levereged to achieve a combination of current community best practices for team workflows and rapid turnaround for single-user development and testing.
+We will differentiate between <em>branch environments</em> that map to branches in the git repository, and static environments, such as <em>aliases</em> and <em>user environments</em>.  The term "static," is used loosely here, in the sense that these environments are configured manually, whereas branch environments are created and deleted automatically by a script.</p>
+
+<p>Jump to:</p>
+
+<ul>
+<li><a href="#branch-environments">Branch environments</a></li>
+<li>
+<a href="#static-environments">Static environments</a>
+
+<ul>
+<li><a href="#aliases">Aliases</a></li>
+<li><a href="#user-environments">User environments</a></li>
+</ul>
+</li>
+<li><a href="#configuration">Configuration</a></li>
+</ul><h3>
+<a name="branch-environments" class="anchor" href="#branch-environments"><span class="octicon octicon-link"></span></a><a>Branch environments</a>
+</h3>
+
+<p>Branch environments are maintained by <a href="https://github.com/adrienthebo/r10k">r10k</a> and correspond directly to git branches.  To use these, first push your commits to the central repository and specify <code>--environment=BRANCH</code> when running the agent. It may take a couple of seconds until <strong>r10k</strong> has created the environment. The update process is currently asynchronous because it relies on GitHub service hooks, but that could be avoided by installing a local <a href="http://gitolite.com/gitolite/">gitolite</a> instance, which could then update Puppet masters synchronously.</p>
+
+<p>Benefits:</p>
+
+<ul>
+<li>Branch environments lend themselves well to a work-flow based on "feature branches" that can be reviewed and merged independently.</li>
+<li>Branch environments can represent ongoing developments and can easily be worked on cooperatively.</li>
+<li>Long-lived branches could represent staging environments, or entirely different sites.</li>
+</ul><p>Restrictions:</p>
+
+<ul>
+<li>Branch names are restricted to alphanumeric characters and underscores due to <a href="http://docs.puppetlabs.com/guides/environment.html">environment name restrictions</a>.</li>
+<li>Static environments take precedence over branch environments in our setup.</li>
+</ul><h3>
+<a name="static-environments" class="anchor" href="#static-environments"><span class="octicon octicon-link"></span></a><a>Static environments</a>
+</h3>
+
+<p>Static environments, in contrast to the branch environments, are created by the system administrator and correspond very much to the static configuration variant in <code>puppet.conf</code> (defining each environment in its own section).  We can further distinguish at least two subtypes of static environments: aliases and user environments.</p>
+
+<h4>
+<a name="aliases" class="anchor" href="#aliases"><span class="octicon octicon-link"></span></a><a>Aliases</a>
+</h4>
+
+<p>There is at least one environment alias called <code>production</code>, pointing to the <code>master</code> branch environment.  This environment has to exist because we don't want to name our default branch <code>production</code>, but that is the default environment name for both the Puppet master as well as the Puppet agent.</p>
+
+<h4>
+<a name="user-environments" class="anchor" href="#user-environments"><span class="octicon octicon-link"></span></a><a>User environments</a>
+</h4>
+
+<p>User environments must be maintained by the users themselves in <code>~/puppet</code> on any Puppet master.  Home directories are mounted via <strong>glusterfs</strong> and are thus shared between all masters.  To use a user environment, specify <code>--environment=USERNAME</code> when running the agent.</p>
+
+<p>Our setup supports "sparse" user environments.  User environments don't need to have the full set of modules installed, or any modules at all.  If a module is missing in a user environment, it will be loaded instead from the <code>production</code> environment.</p>
+
+<p>The advantage over branch environments is that changes can be tested "on the fly", without the need to commit and push them first.  Another plus is that even users without push access, but with an account on the Puppet master, can test their changes against nodes under their control and then submit a pull request.  The downside is that all work must happen in a directory that is accessible to all Puppet masters.</p>
+
+<h3>
+<a name="configuration" class="anchor" href="#configuration"><span class="octicon octicon-link"></span></a><a>Configuration</a>
+</h3>
+
+<p>Puppet <a href="http://docs.puppetlabs.com/guides/environment.html#what-an-environment-is">environments</a> can be defined either statically, with a configuration section named after the environment (e.g., <code>[production]</code>), or dynamically in the <code>[master]</code> section, by setting at least <code>modulepath</code> and <code>manifestdir</code> to a path that interpolates the <code>$environment</code> setting.</p>
+
+<p>We only use the dynamic environment definition, combined with a script that populates the base directory for dynamic environments with symlinks to actual environment locations.</p>
+
+<p>Excerpt from <code>puppet.conf</code> that enables dynamic environments:</p>
+
+<div class="highlight highlight-text"><pre>[master]
+manifestdir=$confdir/environments/dynamic/$environment/manifests
+modulepath=$confdir/environments/dynamic/$environment/modules:$confdir/environments/dynamic/$environment:$confdir/environments/dynamic/production/modules
+</pre></div>
+
+<p>Note the final entry in <code>modulepath</code>, which will cause modules to be loaded from the <code>production</code> environment as a fallback in case the actual dynamic environment doesn't have all the required modules.  This is to support "sparse" user environments as explained below under <em>Static environments</em>.</p>
+
+<p>Here's what the directory tree in <code>$confdir/environments</code> might look like:</p>
+
+<div class="highlight highlight-text"><pre>environments
+├── static
+│   └── production -&gt; ../branches/master
+│   └── ustuehler -&gt; /home/ustuehler/puppet
+├── branches
+│   └── master
+└── dynamic
+    ├── master -&gt; ../branches/master
+    ├── production -&gt; ../static/production
+    └── ustuehler -&gt; ../static/ustuehler
+</pre></div>
+
+<p>The <code>r10k.yaml</code> configuration file:</p>
+
+<div class="highlight highlight-text"><pre># The location to use for storing cached Git repos
+:cachedir: '/etc/puppet/r10k/cache'
+
+# A list of git repositories to create
+:sources:
+  # This will clone the git repository and instantiate an environment per
+  # branch in /etc/puppet/environments/branches
+  :infrastructure:
+    remote: 'git@github.com:my-org/infrastructure'
+    basedir: '/etc/puppet/environments/branches'
+
+# This directory will be purged of any directory that doesn't map to a
+# git branch
+:purgedirs:
+  - '/etc/puppet/environments/branches'
+</pre></div>
+      </section>
+    </div>
+
+    <!-- FOOTER  -->
+    <div id="footer_wrap" class="outer">
+      <footer class="inner">
+        <p class="copyright">Puppet-environments-poc maintained by <a href="https://github.com/puppetize">puppetize</a></p>
+        <p>Published with <a href="http://pages.github.com">GitHub Pages</a></p>
+      </footer>
+    </div>
+
+              <script type="text/javascript">
+            var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
+            document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+          </script>
+          <script type="text/javascript">
+            try {
+              var pageTracker = _gat._getTracker("UA-40430933-1");
+            pageTracker._trackPageview();
+            } catch(err) {}
+          </script>
+
+
+  </body>
+</html>
