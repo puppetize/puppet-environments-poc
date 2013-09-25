@@ -39,6 +39,13 @@ Our setup supports "sparse" user environments.  User environments don't need to 
 
 The advantage over branch environments is that changes can be tested "on the fly", without the need to commit and push them first.  Another plus is that even users without push access, but with an account on the Puppet master, can test their changes against nodes under their control and then submit a pull request.  The downside is that all work must happen in a directory that is accessible to all Puppet masters.
 
+To activate a new user environment create both symlinks:   
+```text
+cd $confdir/environments
+ln -s /home/USERNAME/puppet static/USERNAME
+ln -s ../static/USERNAME dynamic/USERNAME
+```
+
 ### <a id="configuration">Configuration</a>
 
 Puppet [environments](http://docs.puppetlabs.com/guides/environment.html#what-an-environment-is) can be defined either statically, with a configuration section named after the environment (e.g., `[production]`), or dynamically in the `[master]` section, by setting at least `modulepath` and `manifestdir` to a path that interpolates the `$environment` setting.
